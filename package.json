@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
-    "check": "node --check src/index.js && node --check src/config.js && node --check src/storage.js && node --check src/voiceManager.js && node --check src/panel.js",
+    "check": "node --check src/index.js && node --check src/config.js && node --check src/storage.js && node --check src/inputFilter.js && node --check src/voiceManager.js && node --check src/panel.js",
     "test": "node tests/smoke.test.js"
   },
   "engines": {

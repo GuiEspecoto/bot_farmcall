@@ -11,6 +11,11 @@ const {
   ChannelType,
 } = require('discord.js');
 const { getGuildConfig, updateGuildConfig } = require('./storage');
+const {
+  sanitizeText,
+  sanitizeImageUrl,
+  validateVoiceChannelSelection
+} = require('./inputFilter');
 
 function formatUptime(ms) {
   if (!ms) return '0s';
@@ -120,11 +125,33 @@ async function handleInteraction(interaction, voiceManager) {
   }
 
   if (interaction.isChannelSelectMenu() && interaction.customId === 'farm:channel_select') {
-    updateGuildConfig(interaction.guildId, { voiceChannelId: interaction.values[0] });
-    await interaction.update({ content: `✅ Canal definido para <#${interaction.values[0]}>.`, components: [] });
+    const selectedChannelId = interaction.values[0];
+
+    const validation = validateVoiceChannelSelection(
+      interaction.guild,
+      selectedChannelId
+    );
+
+    if (!validation.ok) {
+      await interaction.update({
+        content: `❌ ${validation.reason}`,
+        components: []
+      });
+
+      return true;
+    }
+
+    updateGuildConfig(interaction.guildId, {
+      voiceChannelId: selectedChannelId
+    });
+
+    await interaction.update({
+      content: `✅ Canal definido para <#${selectedChannelId}>.`,
+      components: []
+    });
+
     return true;
   }
-
   if (interaction.isButton() && interaction.customId === 'farm:settings') {
     const config = getGuildConfig(interaction.guildId);
     const modal = new ModalBuilder().setCustomId('farm:settings_modal').setTitle('Configurações do Farm Call');
@@ -163,25 +190,74 @@ async function handleInteraction(interaction, voiceManager) {
 
   if (interaction.isModalSubmit() && interaction.customId === 'farm:settings_modal') {
     const config = getGuildConfig(interaction.guildId);
-    const rawColor = interaction.fields.getTextInputValue('color').trim().replace(/^#/, '');
+
+    const title = sanitizeText(
+      interaction.fields.getTextInputValue('title'),
+      100
+    );
+
+    const description = sanitizeText(
+      interaction.fields.getTextInputValue('description'),
+      1000,
+      { multiline: true }
+    );
+
+    const footer = sanitizeText(
+      interaction.fields.getTextInputValue('footer'),
+      200
+    );
+
+    if (!title || !description || !footer) {
+      await interaction.reply({
+        content: '❌ Título, descrição e rodapé precisam conter texto válido.',
+        ephemeral: true
+      });
+
+      return true;
+    }
+
+    const rawColor = interaction.fields
+      .getTextInputValue('color')
+      .trim()
+      .replace(/^#/, '');
+
     const parsedColor = Number.parseInt(rawColor, 16);
-    const bannerValue = interaction.fields.getTextInputValue('banner').trim();
-    const safeColor = /^[0-9a-fA-F]{6}$/.test(rawColor) && Number.isInteger(parsedColor) ? parsedColor : config.panel.color;
-    const safeBanner = bannerValue === '' || /^https?:\/\//i.test(bannerValue) ? bannerValue : config.panel.banner;
+
+    const safeColor =
+      /^[0-9a-fA-F]{6}$/.test(rawColor) &&
+      Number.isInteger(parsedColor)
+        ? parsedColor
+        : config.panel.color;
+
+    const bannerValue =
+      interaction.fields.getTextInputValue('banner');
+
+    const filteredBanner =
+      sanitizeImageUrl(bannerValue, 500);
+
+    const safeBanner =
+      filteredBanner === null
+        ? config.panel.banner
+        : filteredBanner;
+
     updateGuildConfig(interaction.guildId, {
       panel: {
         ...config.panel,
-        title: interaction.fields.getTextInputValue('title').trim(),
-        description: interaction.fields.getTextInputValue('description').trim(),
-        footer: interaction.fields.getTextInputValue('footer').trim(),
+        title,
+        description,
+        footer,
         banner: safeBanner,
-        color: safeColor,
-      },
+        color: safeColor
+      }
     });
-    await interaction.reply({ content: '✅ Configurações salvas. Use `/farm painel` para publicar o painel atualizado.', ephemeral: true });
+
+    await interaction.reply({
+      content: '✅ Configurações salvas. Use `/farm painel` para publicar o painel atualizado.',
+      ephemeral: true
+    });
+
     return true;
   }
-
   return true;
 }
 
